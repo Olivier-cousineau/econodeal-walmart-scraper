@@ -62,7 +62,10 @@ function buildProxySettings() {
 
 async function main() {
   const proxy = buildProxySettings();
-  const browser = await chromium.launch({ headless: false, proxy });
+  const isHeadful = process.env.HEADLESS === "false";
+  console.log("Playwright mode:", isHeadful ? "headful" : "headless");
+
+  const browser = await chromium.launch({ headless: isHeadful ? false : true, proxy });
 
   const context = await browser.newContext({
     userAgent: chooseUserAgent(),
