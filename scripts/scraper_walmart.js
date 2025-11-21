@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { chromium } from 'playwright';
 
 const DEFAULT_CLEARANCE_URL = 'https://www.walmart.ca/fr/cp/clearance/6000204800999';
@@ -153,6 +154,12 @@ async function main() {
 
   const clearanceUrl = args.url.includes(args.store) ? args.url : `${args.url.replace(/\/?$/, '')}/${args.store}`;
   await page.goto(clearanceUrl, { waitUntil: 'networkidle' });
+  for (let i = 0; i < 5; i += 1) {
+    await page.evaluate(() => {
+      window.scrollBy(0, window.innerHeight);
+    });
+    await page.waitForTimeout(500);
+  }
   await page.waitForLoadState('networkidle');
 
   let products = [];
@@ -167,6 +174,23 @@ async function main() {
     products = uniqueByUrl(rawProducts.filter((product) => product?.title));
   } catch (error) {
     console.warn('No visible Walmart product cards found or timeout reached, returning empty products list.');
+  }
+
+  if (products.length === 0) {
+    console.warn('No products found, saving debug artifacts...');
+    const outputDir = 'outputs/walmart';
+
+    try {
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      await page.screenshot({ path: `${outputDir}/debug.png`, fullPage: true });
+      const html = await page.content();
+      fs.writeFileSync(`${outputDir}/debug.html`, html, 'utf-8');
+    } catch (debugError) {
+      console.error('Failed to save debug artifacts:', debugError);
+    }
   }
 
   const result = { store: args.store, url: clearanceUrl, categories: args.categories, count: products.length, products };
