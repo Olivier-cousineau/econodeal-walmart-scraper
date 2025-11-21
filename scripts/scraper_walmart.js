@@ -75,27 +75,6 @@ function pullFromState(state) {
   return candidates;
 }
 
-function pullFromDom() {
-  const cards = Array.from(document.querySelectorAll('[data-automation="product-grid"] article, article[data-automation="product"]'));
-  return cards.map((card) => {
-    const title = card.querySelector('[data-automation="name"]')?.textContent?.trim() || card.querySelector('a[title]')?.getAttribute('title');
-    const priceText = card.querySelector('[data-automation="price"]')?.textContent || card.querySelector('.css-1p4va6y')?.textContent;
-    const link = card.querySelector('a[href]')?.getAttribute('href');
-    const breadcrumb = card.querySelector('[data-automation="department"]')?.textContent;
-    const category = card.querySelector('[data-automation="category"]')?.textContent || breadcrumb;
-    const availability = card.querySelector('[data-automation="availability"]')?.textContent;
-    return {
-      title,
-      price: normalizePrice(priceText),
-      currency: 'CAD',
-      url: link?.startsWith('http') ? link : link ? `https://www.walmart.ca${link}` : undefined,
-      category,
-      breadcrumb,
-      availability,
-    };
-  });
-}
-
 async function collectProducts(cardsLocator) {
   const products = await cardsLocator.evaluateAll((cards) => {
     return cards.map((card) => {
@@ -146,6 +125,95 @@ async function collectProducts(cardsLocator) {
   return products.filter((product) => product.title && product.productUrl && product.imageUrl);
 }
 
+function mapProductFromApi(rawProduct) {
+  if (!rawProduct || typeof rawProduct !== 'object') return null;
+
+  const title = rawProduct?.name || rawProduct?.displayName || rawProduct?.title || rawProduct?.productName;
+  const currentPrice =
+    normalizePrice(rawProduct?.price?.price) ??
+    normalizePrice(rawProduct?.price?.current) ??
+    normalizePrice(rawProduct?.price) ??
+    normalizePrice(rawProduct?.currentPrice) ??
+    normalizePrice(rawProduct?.primaryOffer?.offerPrice) ??
+    normalizePrice(rawProduct?.priceInfo?.currentPrice?.price) ??
+    normalizePrice(rawProduct?.priceInfo?.currentPrice);
+
+  const originalPrice =
+    normalizePrice(rawProduct?.price?.listPrice) ??
+    normalizePrice(rawProduct?.price?.wasPrice) ??
+    normalizePrice(rawProduct?.wasPrice) ??
+    normalizePrice(rawProduct?.originalPrice) ??
+    normalizePrice(rawProduct?.priceInfo?.wasPrice?.price) ??
+    normalizePrice(rawProduct?.priceInfo?.wasPrice);
+
+  const urlPath =
+    rawProduct?.productPageUrl ||
+    rawProduct?.canonicalUrl ||
+    rawProduct?.canonicalUrlV2 ||
+    rawProduct?.canonicalUrlV3 ||
+    rawProduct?.productUrl;
+  const productUrl = urlPath ? (urlPath.startsWith('http') ? urlPath : `https://www.walmart.ca${urlPath}`) : null;
+
+  const imageUrlCandidate =
+    rawProduct?.image ||
+    rawProduct?.imageUrl ||
+    rawProduct?.imageInfo?.thumbnailUrl ||
+    rawProduct?.images?.[0]?.url ||
+    rawProduct?.imageUrls?.[0];
+  const imageUrl = imageUrlCandidate
+    ? imageUrlCandidate.startsWith('http')
+      ? imageUrlCandidate
+      : `https:${imageUrlCandidate}`
+    : null;
+
+  if (!title || !productUrl) return null;
+
+  return {
+    title,
+    currentPrice,
+    originalPrice,
+    productUrl,
+    imageUrl,
+    category: rawProduct?.category?.name || rawProduct?.categoryName,
+    breadcrumb: rawProduct?.breadcrumb?.join(' > '),
+  };
+}
+
+function extractProductsFromApi(data) {
+  const products = [];
+
+  pullFromState(data).forEach((product) => {
+    const mapped = mapProductFromApi({ ...product, productUrl: product.url ?? product.productUrl });
+    if (mapped) products.push(mapped);
+  });
+
+  const candidateArrays = [];
+  const addArray = (arr) => {
+    if (Array.isArray(arr)) candidateArrays.push(arr);
+  };
+
+  addArray(data?.items);
+  addArray(data?.products);
+  addArray(data?.results);
+  addArray(data?.searchResults);
+  addArray(data?.data?.items);
+  addArray(data?.data?.products);
+  addArray(data?.data?.results);
+  addArray(data?.payload?.items);
+  addArray(data?.payload?.products);
+  addArray(data?.payload?.searchResult?.products);
+  addArray(data?.payload?.searchResult?.items);
+
+  candidateArrays.forEach((arr) => {
+    arr.forEach((rawProduct) => {
+      const mapped = mapProductFromApi(rawProduct);
+      if (mapped) products.push(mapped);
+    });
+  });
+
+  return uniqueByUrl(products.filter((product) => product?.title && product?.productUrl));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const browser = await chromium.launch({ headless: true });
@@ -155,31 +223,58 @@ async function main() {
   const clearanceUrl = "https://www.walmart.ca/fr/browse/electronics/10003?facet=special_offers%3ALiquidation&icid=cp_page_other_electronic_carousal_web_50803_4QMWQHY292";
   console.log("DEBUG Walmart URL:", clearanceUrl);
   await page.goto(clearanceUrl, { waitUntil: 'networkidle' });
-  for (let i = 0; i < 5; i += 1) {
-    await page.evaluate(() => {
-      window.scrollBy(0, window.innerHeight);
-    });
-    await page.waitForTimeout(500);
+
+  let apiResponse = null;
+
+  await page.route('**/*', (route) => {
+    const request = route.request();
+    route.continue();
+  });
+
+  apiResponse = await page
+    .waitForResponse(
+      async (response) => {
+        const url = response.url();
+        const ct = response.headers()['content-type'] || '';
+
+        if (url.includes('walmart.ca') && (url.includes('product') || url.includes('search') || url.includes('browse'))) {
+          console.log('DEBUG API URL:', url);
+        }
+
+        return (
+          url.includes('walmart.ca') &&
+          (url.includes('product') || url.includes('search') || url.includes('browse')) &&
+          ct.includes('application/json')
+        );
+      },
+      { timeout: 20000 },
+    )
+    .catch(() => null);
+
+  if (!apiResponse) {
+    console.warn('No Walmart JSON API response captured, returning empty products list.');
+    const result = { store: args.store, url: clearanceUrl, categories: args.categories, count: 0, products: [] };
+    console.log(JSON.stringify(result, null, 2));
+    await browser.close();
+    return;
   }
-  await page.waitForLoadState('networkidle');
 
-  let products = [];
+  const data = await apiResponse.json();
 
+  const outputDir = 'outputs/walmart';
   try {
-    const productCardSelector = 'article[data-automation="product"], [data-automation="product-grid"] article';
-    const cards = page.locator(productCardSelector);
-
-    await cards.first().waitFor({ state: 'visible', timeout: 15000 });
-
-    const rawProducts = await collectProducts(cards);
-    products = uniqueByUrl(rawProducts.filter((product) => product?.title));
-  } catch (error) {
-    console.warn('No visible Walmart product cards found or timeout reached, returning empty products list.');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    fs.writeFileSync(`${outputDir}/api-response.json`, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (debugError) {
+    console.error('Failed to save API response JSON:', debugError);
   }
+
+  const products = extractProductsFromApi(data);
 
   if (products.length === 0) {
     console.warn('No products found, saving debug artifacts...');
-    const outputDir = 'outputs/walmart';
 
     try {
       if (!fs.existsSync(outputDir)) {
