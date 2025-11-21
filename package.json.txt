@@ -1,0 +1,13 @@
+{
+  "name": "econodeal-walmart-scraper",
+  "version": "1.0.0",
+  "description": "Walmart clearance scraper for EconoDeal",
+  "main": "scripts/scraper_walmart.js",
+  "type": "module",
+  "scripts": {
+    "scrape:walmart": "node scripts/scraper_walmart.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}
