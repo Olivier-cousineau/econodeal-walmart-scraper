@@ -1,0 +1,42 @@
+name: RONA Saint-Jérôme - Liquidation
+
+on:
+  schedule:
+    # Every day at 05:00 America/Toronto (~10:00 UTC)
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-rona-saint-jerome:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers (Chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright browsers (all)
+        run: npx playwright install --with-deps
+
+      - name: Run RONA Saint-Jérôme scraper
+        run: npm run scrape:rona:saint-jerome
+
+      - name: Upload RONA artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rona-saint-jerome-liquidation
+          path: outputs/rona/saint-jerome
