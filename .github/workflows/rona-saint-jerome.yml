@@ -32,7 +32,7 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run RONA Saint-Jérôme scraper
-        run: npm run scrape:rona:saint-jerome
+        run: npm run scrape:headless
 
       - name: Upload RONA artifacts
         if: always()
