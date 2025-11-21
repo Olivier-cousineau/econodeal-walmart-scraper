@@ -4,6 +4,10 @@
   "description": "Placeholder package after removing Walmart scraping logic.",
   "type": "module",
   "private": true,
-  "scripts": {},
-  "dependencies": {}
+  "scripts": {
+    "scrape:rona:saint-jerome": "node scripts/scraper_rona_saintjerome.js"
+  },
+  "dependencies": {
+    "playwright": "^1.45.0"
+  }
 }
