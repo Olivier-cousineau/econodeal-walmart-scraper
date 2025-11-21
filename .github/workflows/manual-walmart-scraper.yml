@@ -43,3 +43,10 @@ jobs:
           WALMART_STORE_ID: ${{ inputs.store_id }}
           WALMART_CATEGORIES: ${{ inputs.categories }}
         run: npm run scrape:walmart
+
+      - name: Upload Walmart debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: walmart-debug
+          path: outputs/walmart
