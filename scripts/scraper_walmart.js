@@ -225,15 +225,10 @@ async function main() {
 
   page.on('response', async (response) => {
     try {
-      const ct = response.headers()['content-type'] || '';
-      if (!ct.includes('application/json')) return;
-
       const url = response.url();
-      const status = response.status();
-
-      // Only keep Walmart JSON for debugging
       if (!url.includes('walmart.ca')) return;
 
+      const status = response.status();
       const bodyText = await response.text();
 
       jsonResponses.push({
@@ -255,11 +250,17 @@ async function main() {
 
   jsonResponses.forEach((entry, index) => {
     const safeIndex = String(index + 1).padStart(3, '0');
-    const filePath = path.join(outDir, `response-${safeIndex}.json`);
-    fs.writeFileSync(filePath, entry.body, 'utf-8');
+    const filePath = path.join(outDir, `response-${safeIndex}.txt`);
+    const content = [
+      `URL: ${entry.url}`,
+      `STATUS: ${entry.status}`,
+      '',
+      entry.body,
+    ].join('\n');
+    fs.writeFileSync(filePath, content, 'utf-8');
   });
 
-  console.log(`Saved ${jsonResponses.length} Walmart JSON responses to ${outDir}`);
+  console.log(`Saved ${jsonResponses.length} Walmart responses to ${outDir}`);
 
   const products = [];
 
