@@ -152,7 +152,8 @@ async function main() {
   const context = await browser.newContext({ locale: 'fr-CA' });
   const page = await context.newPage();
 
-  const clearanceUrl = args.url.includes(args.store) ? args.url : `${args.url.replace(/\/?$/, '')}/${args.store}`;
+  const clearanceUrl = "https://www.walmart.ca/fr/browse/electronics/10003?facet=special_offers%3ALiquidation&icid=cp_page_other_electronic_carousal_web_50803_4QMWQHY292";
+  console.log("DEBUG Walmart URL:", clearanceUrl);
   await page.goto(clearanceUrl, { waitUntil: 'networkidle' });
   for (let i = 0; i < 5; i += 1) {
     await page.evaluate(() => {
