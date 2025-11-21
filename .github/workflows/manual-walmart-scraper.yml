@@ -31,6 +31,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Install Playwright browsers (Chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright browsers (all)
+        run: npx playwright install --with-deps
+
       - name: Run Walmart clearance scraper
         env:
           WALMART_CLEARANCE_URL: ${{ inputs.clearance_url }}
