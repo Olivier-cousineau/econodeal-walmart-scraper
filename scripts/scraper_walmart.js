@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { chromium } from 'playwright';
 
-const DEFAULT_CLEARANCE_URL = 'https://www.walmart.ca/fr/cp/clearance/6000204800999';
+const DEFAULT_CLEARANCE_URL = 'https://www.walmart.ca/fr/browse/electronics/10003?facet=special_offers%3ALiquidation&icid=cp_page_other_electronic_carousal_web_50803_4QMWQHY292';
 const DEFAULT_STORE_ID = '6000204800999';
 const DEFAULT_CATEGORIES = ['électronique', 'electronics', 'jouets', 'toys'];
 
