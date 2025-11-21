@@ -155,14 +155,21 @@ async function main() {
   await page.goto(clearanceUrl, { waitUntil: 'networkidle' });
   await page.waitForLoadState('networkidle');
 
-  const productCardSelector = 'article[data-automation="product"], [data-automation="product-grid"] article';
-  const cards = page.locator(productCardSelector);
-  await cards.first().waitFor({ state: 'visible', timeout: 15000 });
+  let products = [];
 
-  const rawProducts = await collectProducts(cards);
-  const filtered = uniqueByUrl(rawProducts.filter((product) => product?.title));
+  try {
+    const productCardSelector = 'article[data-automation="product"], [data-automation="product-grid"] article';
+    const cards = page.locator(productCardSelector);
 
-  const result = { store: args.store, url: clearanceUrl, categories: args.categories, count: filtered.length, products: filtered };
+    await cards.first().waitFor({ state: 'visible', timeout: 15000 });
+
+    const rawProducts = await collectProducts(cards);
+    products = uniqueByUrl(rawProducts.filter((product) => product?.title));
+  } catch (error) {
+    console.warn('No visible Walmart product cards found or timeout reached, returning empty products list.');
+  }
+
+  const result = { store: args.store, url: clearanceUrl, categories: args.categories, count: products.length, products };
 
   console.log(JSON.stringify(result, null, 2));
 
