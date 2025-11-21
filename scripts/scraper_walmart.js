@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { chromium } from 'playwright';
 
 const DEFAULT_CLEARANCE_URL = "https://www.walmart.ca/fr/browse/electronics/10003?facet=special_offers%3ALiquidation&icid=cp_page_other_electronic_carousal_web_50803_4QMWQHY292";
@@ -220,74 +221,47 @@ async function main() {
   const context = await browser.newContext({ locale: 'fr-CA' });
   const page = await context.newPage();
 
+  const jsonResponses = [];
+
+  page.on('response', async (response) => {
+    try {
+      const ct = response.headers()['content-type'] || '';
+      if (!ct.includes('application/json')) return;
+
+      const url = response.url();
+      const status = response.status();
+
+      // Only keep Walmart JSON for debugging
+      if (!url.includes('walmart.ca')) return;
+
+      const bodyText = await response.text();
+
+      jsonResponses.push({
+        url,
+        status,
+        body: bodyText,
+      });
+    } catch (e) {
+      // ignore errors in debug listener
+    }
+  });
+
   const clearanceUrl = "https://www.walmart.ca/fr/browse/electronics/10003?facet=special_offers%3ALiquidation&icid=cp_page_other_electronic_carousal_web_50803_4QMWQHY292";
   console.log("DEBUG Walmart URL:", clearanceUrl);
   await page.goto(clearanceUrl, { waitUntil: 'networkidle' });
 
-  let apiResponse = null;
+  const outDir = path.join('outputs', 'walmart', 'json-responses');
+  fs.mkdirSync(outDir, { recursive: true });
 
-  await page.route('**/*', (route) => {
-    const request = route.request();
-    route.continue();
+  jsonResponses.forEach((entry, index) => {
+    const safeIndex = String(index + 1).padStart(3, '0');
+    const filePath = path.join(outDir, `response-${safeIndex}.json`);
+    fs.writeFileSync(filePath, entry.body, 'utf-8');
   });
 
-  apiResponse = await page
-    .waitForResponse(
-      async (response) => {
-        const url = response.url();
-        const ct = response.headers()['content-type'] || '';
+  console.log(`Saved ${jsonResponses.length} Walmart JSON responses to ${outDir}`);
 
-        if (url.includes('walmart.ca') && (url.includes('product') || url.includes('search') || url.includes('browse'))) {
-          console.log('DEBUG API URL:', url);
-        }
-
-        return (
-          url.includes('walmart.ca') &&
-          (url.includes('product') || url.includes('search') || url.includes('browse')) &&
-          ct.includes('application/json')
-        );
-      },
-      { timeout: 20000 },
-    )
-    .catch(() => null);
-
-  if (!apiResponse) {
-    console.warn('No Walmart JSON API response captured, returning empty products list.');
-    const result = { store: args.store, url: clearanceUrl, categories: args.categories, count: 0, products: [] };
-    console.log(JSON.stringify(result, null, 2));
-    await browser.close();
-    return;
-  }
-
-  const data = await apiResponse.json();
-
-  const outputDir = 'outputs/walmart';
-  try {
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-    fs.writeFileSync(`${outputDir}/api-response.json`, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (debugError) {
-    console.error('Failed to save API response JSON:', debugError);
-  }
-
-  const products = extractProductsFromApi(data);
-
-  if (products.length === 0) {
-    console.warn('No products found, saving debug artifacts...');
-
-    try {
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-
-      await page.screenshot({ path: `${outputDir}/debug.png`, fullPage: true });
-      const html = await page.content();
-      fs.writeFileSync(`${outputDir}/debug.html`, html, 'utf-8');
-    } catch (debugError) {
-      console.error('Failed to save debug artifacts:', debugError);
-    }
-  }
+  const products = [];
 
   const result = { store: args.store, url: clearanceUrl, categories: args.categories, count: products.length, products };
 
