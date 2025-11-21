@@ -41,9 +41,10 @@ function matchesCategory(product, keywords) {
 function uniqueByUrl(products) {
   const seen = new Set();
   return products.filter((product) => {
-    if (!product.url) return true;
-    if (seen.has(product.url)) return false;
-    seen.add(product.url);
+    const url = product.productUrl || product.url;
+    if (!url) return true;
+    if (seen.has(url)) return false;
+    seen.add(url);
     return true;
   });
 }
@@ -94,15 +95,41 @@ function pullFromDom() {
   });
 }
 
-async function collectProducts(page) {
-  const { products } = await page.evaluate(() => {
-    const preloaded = window.__PRELOADED_STATE__;
-    const redux = window.__WML_REDUX_INITIAL_STATE__;
-    const raw = [];
-    raw.push(...pullFromState(preloaded));
-    raw.push(...pullFromState(redux));
-    if (!raw.length) raw.push(...pullFromDom());
-    return { products: raw };
+async function collectProducts(cardsLocator) {
+  const products = await cardsLocator.evaluateAll((cards) => {
+    return cards.map((card) => {
+      const title =
+        card.querySelector('[data-automation="name"]')?.textContent?.trim() ||
+        card.querySelector('a[title]')?.getAttribute('title') ||
+        card.querySelector('a[href]')?.textContent?.trim();
+
+      const currentPriceText =
+        card.querySelector('[data-automation="price-section"] [data-automation="current-price"]')?.textContent ||
+        card.querySelector('[data-automation="current-price"]')?.textContent ||
+        card.querySelector('[data-automation="price"]')?.textContent ||
+        card.querySelector('[itemprop="price"]')?.getAttribute('content') ||
+        card.querySelector('span[class*="price"]')?.textContent;
+
+      const originalPriceText =
+        card.querySelector('[data-automation="price-section"] [data-automation="was-price"]')?.textContent ||
+        card.querySelector('[data-automation="strike-price"]')?.textContent ||
+        card.querySelector('s')?.textContent;
+
+      const link = card.querySelector('a[href]')?.getAttribute('href');
+      const image = card.querySelector('img[src], img[data-src], img[data-automation="product-image"]');
+      const imageUrl =
+        image?.getAttribute('src') ||
+        image?.getAttribute('data-src') ||
+        image?.getAttribute('data-image-src');
+
+      return {
+        title: title ?? null,
+        currentPrice: normalizePrice(currentPriceText),
+        originalPrice: normalizePrice(originalPriceText),
+        productUrl: link?.startsWith('http') ? link : link ? `https://www.walmart.ca${link}` : null,
+        imageUrl: imageUrl?.startsWith('http') ? imageUrl : imageUrl ? `https:${imageUrl}` : null,
+      };
+    });
 
     function normalizePrice(rawPrice) {
       if (typeof rawPrice === 'number') return rawPrice;
@@ -113,55 +140,9 @@ async function collectProducts(page) {
       }
       return null;
     }
-
-    function pullFromState(state) {
-      if (!state || typeof state !== 'object') return [];
-      const candidates = [];
-      const productBuckets = [state.entities?.products, state.entities?.product, state.products, state.items];
-      productBuckets
-        .filter(Boolean)
-        .forEach((bucket) => {
-          Object.values(bucket).forEach((product) => {
-            if (!product) return;
-            const urlPath = product?.productPageUrl || product?.productUrl || product?.canonicalUrl || product?.canonicalUrlV2 || product?.canonicalUrlV3;
-            candidates.push({
-              title: product?.name || product?.displayName || product?.title,
-              price: normalizePrice(product?.price?.price || product?.price?.current || product?.price?.current?.price || product?.currentPrice || product?.priceInfo?.currentPrice?.price || product?.priceInfo?.currentPrice),
-              currency: product?.price?.currency || product?.priceInfo?.currentPrice?.currencyUnit || 'CAD',
-              url: urlPath ? `https://www.walmart.ca${urlPath}` : undefined,
-              category: product?.category?.name || product?.categoryName || product?.department,
-              categories: product?.categories || product?.categoryPath || product?.categoryHierarchy,
-              breadcrumb: product?.breadcrumb?.join(' > '),
-              availability: product?.availabilityStatus || product?.availability || product?.fulfillmentStatus,
-            });
-          });
-        });
-      return candidates;
-    }
-
-    function pullFromDom() {
-      const cards = Array.from(document.querySelectorAll('[data-automation="product-grid"] article, article[data-automation="product"]'));
-      return cards.map((card) => {
-        const title = card.querySelector('[data-automation="name"]')?.textContent?.trim() || card.querySelector('a[title]')?.getAttribute('title');
-        const priceText = card.querySelector('[data-automation="price"]')?.textContent || card.querySelector('.css-1p4va6y')?.textContent;
-        const link = card.querySelector('a[href]')?.getAttribute('href');
-        const breadcrumb = card.querySelector('[data-automation="department"]')?.textContent;
-        const category = card.querySelector('[data-automation="category"]')?.textContent || breadcrumb;
-        const availability = card.querySelector('[data-automation="availability"]')?.textContent;
-        return {
-          title,
-          price: normalizePrice(priceText),
-          currency: 'CAD',
-          url: link?.startsWith('http') ? link : link ? `https://www.walmart.ca${link}` : undefined,
-          category,
-          breadcrumb,
-          availability,
-        };
-      });
-    }
   });
 
-  return products;
+  return products.filter((product) => product.title && product.productUrl && product.imageUrl);
 }
 
 async function main() {
@@ -172,25 +153,30 @@ async function main() {
 
   const clearanceUrl = args.url.includes(args.store) ? args.url : `${args.url.replace(/\/?$/, '')}/${args.store}`;
   await page.goto(clearanceUrl, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(3000);
+  await page.waitForLoadState('networkidle');
 
-  const rawProducts = await collectProducts(page);
-  const filtered = uniqueByUrl(
-    rawProducts
-      .filter((product) => product?.title)
-      .filter((product) => matchesCategory(product, args.categories))
-      .map((product) => ({
-        ...product,
-        price: product.price ?? null,
-      })),
-  );
+  const productCardSelector = 'article[data-automation="product"], [data-automation="product-grid"] article';
+  const cards = page.locator(productCardSelector);
+  await cards.first().waitFor({ state: 'visible', timeout: 15000 });
 
-  console.log(JSON.stringify({ store: args.store, url: clearanceUrl, categories: args.categories, count: filtered.length, products: filtered }, null, 2));
+  const rawProducts = await collectProducts(cards);
+  const filtered = uniqueByUrl(rawProducts.filter((product) => product?.title));
+
+  const result = { store: args.store, url: clearanceUrl, categories: args.categories, count: filtered.length, products: filtered };
+
+  console.log(JSON.stringify(result, null, 2));
 
   await browser.close();
 }
 
-main().catch((error) => {
-  console.error('Failed to scrape Walmart clearance page:', error);
-  process.exitCode = 1;
-});
+async function run() {
+  try {
+    await main();
+    process.exit(0);
+  } catch (error) {
+    console.error('Failed to scrape Walmart clearance page:', error);
+    process.exit(1);
+  }
+}
+
+run();
