@@ -99,7 +99,11 @@ async function main() {
 
   await page.waitForTimeout(humanDelay(400, 900));
   await humanMove(page);
-  await page.goto(clearanceUrl, { waitUntil: "networkidle" });
+  console.log(`Navigating to ${clearanceUrl}...`);
+  await page.goto(clearanceUrl, {
+    waitUntil: "domcontentloaded", // or "load"
+    timeout: 60000,
+  });
   page.setDefaultTimeout(60000);
 
   await page.waitForSelector("body", { state: "attached", timeout: 45000 });
@@ -110,7 +114,7 @@ async function main() {
   const PRODUCT_CARD_SELECTOR = "div.product-thumbnail__header";
   await page.waitForSelector(PRODUCT_CARD_SELECTOR, { timeout: 60000 });
   const cards = await page.$$(PRODUCT_CARD_SELECTOR);
-  console.log(`DEBUG: Found ${cards.length} product cards`);
+  console.log(`DEBUG: found ${cards.length} product cards`);
 
   if (cards.length === 0) {
     const html = await page.content();
