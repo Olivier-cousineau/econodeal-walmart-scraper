@@ -2,8 +2,12 @@ import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
 
-const clearanceUrl =
-  "https://www.bureauengros.com/collections/fr-centre-de-liquidation-7922?configure%5Bfilters%5D=tags%3A%22fr_CA%22&configure%5BruleContexts%5D%5B0%5D=logged-out&page=1&refinementList%5Bnamed_tags.clearance_sku%5D%5B0%5D=1&sortBy=shopify_products";
+const BASE_URL =
+  "https://www.bureauengros.com/collections/fr-centre-de-liquidation-7922" +
+  "?configure%5Bfilters%5D=tags%3A%22fr_CA%22" +
+  "&configure%5BruleContexts%5D%5B0%5D=logged-out" +
+  "&refinementList%5Bnamed_tags.clearance_sku%5D%5B0%5D=1" +
+  "&sortBy=shopify_products";
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -105,6 +109,48 @@ async function extractAttribute(locator, selectorList, attribute) {
   return null;
 }
 
+async function extractProduct(card) {
+  const title = await extractText(card, "a.product-thumbnail__title.product-link");
+
+  let productUrl = "";
+  try {
+    const href = await card.$eval(
+      "a.product-thumbnail__title.product-link",
+      (el) => el.getAttribute("href"),
+    );
+    if (href) {
+      productUrl = new URL(href, "https://www.bureauengros.com").toString();
+    }
+  } catch {}
+
+  const currentPriceText = await extractText(card, "span.money.pre-money");
+
+  const originalPriceText = await extractText(
+    card,
+    "div.product-thumbnail__price div.top-product.fr strike",
+  );
+
+  const currentPrice = parsePrice(currentPriceText);
+  const originalPrice = parsePrice(originalPriceText);
+
+  const imgSrc = await card
+    .$eval("img.product-thumbnail__image", (el) => el.src)
+    .catch(() => null);
+  const imageUrl = imgSrc ? buildAbsoluteUrl(imgSrc) : "";
+
+  const cardText = (await card.innerText().catch(() => "")) || "";
+  const badge = /liquidation|clearance/i.test(cardText);
+
+  return {
+    title,
+    productUrl,
+    currentPrice,
+    originalPrice,
+    imageUrl,
+    badge,
+  };
+}
+
 async function main() {
   const proxy = buildProxySettings();
   const isHeadful = process.env.HEADLESS === "false";
@@ -120,87 +166,48 @@ async function main() {
 
   await page.waitForTimeout(humanDelay(400, 900));
   await humanMove(page);
-  console.log(`Navigating to ${clearanceUrl}...`);
-  await page.goto(clearanceUrl, {
-    waitUntil: "domcontentloaded", // or "load"
-    timeout: 60000,
-  });
   page.setDefaultTimeout(60000);
 
-  await page.waitForSelector("body", { state: "attached", timeout: 45000 });
-  await gradualScroll(page);
-
-  await page.waitForSelector("img", { state: "attached", timeout: 45000 }).catch(() => null);
-
   const PRODUCT_CARD_SELECTOR = "div.product-thumbnail";
-  await page.waitForSelector(PRODUCT_CARD_SELECTOR, { timeout: 60000 });
-  const cards = await page.$$(PRODUCT_CARD_SELECTOR);
-  console.log(`DEBUG: found ${cards.length} product cards`);
+  const maxPages = 10; // safety limit
+  const allProducts = [];
 
-  if (cards.length === 0) {
-    const html = await page.content();
-    fs.writeFileSync("bureauengros_debug.html", html);
-    console.error("No product cards found, wrote bureauengros_debug.html");
-  }
+  for (let pageIndex = 1; pageIndex <= maxPages; pageIndex++) {
+    const url = `${BASE_URL}&page=${pageIndex}`;
+    console.log(`Navigating to page ${pageIndex}: ${url}`);
 
-  const products = [];
-
-  for (const card of cards) {
-    const title = await extractText(
-      card,
-      "a.product-thumbnail__title.product-link",
-    );
-
-    let productUrl = "";
-    try {
-      const href = await card.$eval(
-        "a.product-thumbnail__title.product-link",
-        (el) => el.getAttribute("href"),
-      );
-      if (href) {
-        productUrl = new URL(href, "https://www.bureauengros.com").toString();
-      }
-    } catch {}
-
-    const currentPriceText = await extractText(
-      card,
-      "span.money.pre-money",
-    );
-
-    const originalPriceText = await extractText(
-      card,
-      "div.product-thumbnail__price div.top-product.fr strike",
-    );
-
-    const currentPrice = parsePrice(currentPriceText);
-    const originalPrice = parsePrice(originalPriceText);
-
-    const imgSrc = await card
-      .$eval("img.product-thumbnail__image", (el) => el.src)
-      .catch(() => null);
-    const imageUrl = imgSrc ? buildAbsoluteUrl(imgSrc) : "";
-
-    const cardText = (await card.innerText().catch(() => "")) || "";
-    const badge = /liquidation|clearance/i.test(cardText);
-
-    products.push({
-      title,
-      productUrl,
-      currentPrice,
-      originalPrice,
-      imageUrl,
-      badge,
+    await page.goto(url, {
+      waitUntil: "networkidle",
+      timeout: 60000,
     });
 
-    await page.waitForTimeout(humanDelay(100, 300));
+    await page.waitForSelector("body", { state: "attached", timeout: 45000 });
+    await gradualScroll(page);
+
+    await page.waitForSelector("img", { state: "attached", timeout: 45000 }).catch(() => null);
+
+    await page.waitForSelector(PRODUCT_CARD_SELECTOR, { timeout: 60000 }).catch(() => null);
+    const cards = await page.$$(PRODUCT_CARD_SELECTOR);
+    console.log(`Page ${pageIndex}: found ${cards.length} product cards`);
+
+    if (!cards.length) {
+      console.log("No more products, stopping pagination.");
+      break;
+    }
+
+    for (const card of cards) {
+      const product = await extractProduct(card);
+      allProducts.push(product);
+      await page.waitForTimeout(humanDelay(100, 300));
+    }
   }
 
   const result = {
     store: "Bureau en Gros - Centre de liquidation",
-    url: clearanceUrl,
+    url: BASE_URL,
     scrapedAt: new Date().toISOString(),
-    count: products.length,
-    products,
+    count: allProducts.length,
+    products: allProducts,
   };
 
   const outDir = path.join("outputs", "bureauengros", "clearance");
