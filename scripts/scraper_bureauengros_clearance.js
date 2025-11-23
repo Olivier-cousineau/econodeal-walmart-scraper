@@ -80,11 +80,21 @@ async function extractText(root, selectorList) {
       if (text && text.trim()) return text.trim();
     }
 
-    return "";
+    return null;
   } catch (err) {
     console.error(`Failed to extract text for selector "${selectorList}":`, err);
     return null;
   }
+}
+
+function parsePrice(raw) {
+  if (!raw) return null;
+  const clean = raw
+    .replace(/\s/g, "")
+    .replace("$", "")
+    .replace(",", ".");
+  const num = parseFloat(clean);
+  return Number.isNaN(num) ? null : num;
 }
 
 async function extractAttribute(locator, selectorList, attribute) {
@@ -136,33 +146,34 @@ async function main() {
   const products = [];
 
   for (const card of cards) {
-    const title = await card
-      .$eval("a.product-link", (el) => el.innerText.trim())
-      .catch(() => "");
+    const title = await extractText(
+      card,
+      "a.product-thumbnail__title.product-link",
+    );
 
-    const href = await card
-      .$eval("a.product-link", (el) => el.getAttribute("href") || "")
-      .catch(() => "");
-    const productUrl = buildAbsoluteUrl(href);
+    let productUrl = "";
+    try {
+      const href = await card.$eval(
+        "a.product-thumbnail__title.product-link",
+        (el) => el.getAttribute("href"),
+      );
+      if (href) {
+        productUrl = new URL(href, "https://www.bureauengros.com").toString();
+      }
+    } catch {}
 
-    const currentPrice =
-      (await extractText(card, [
-        "[data-testid=product-price-current]",
-        "[data-testid=price-current]",
-        ".price__current",
-        ".money",
-        ".price",
-      ])) || "";
+    const currentPriceText = await extractText(
+      card,
+      "span.money.pre-money",
+    );
 
-    const originalPriceRaw =
-      (await extractText(card, [
-        "[data-testid=product-price-original]",
-        "[data-testid=price-original]",
-        ".price__original",
-        ".price__was",
-        ".price--original",
-      ])) || null;
-    const originalPrice = originalPriceRaw ? originalPriceRaw.trim() : null;
+    const originalPriceText = await extractText(
+      card,
+      "div.product-thumbnail__price div.top-product.fr strike",
+    );
+
+    const currentPrice = parsePrice(currentPriceText);
+    const originalPrice = parsePrice(originalPriceText);
 
     const imgSrc = await card
       .$eval("img.product-thumbnail__image", (el) => el.src)
