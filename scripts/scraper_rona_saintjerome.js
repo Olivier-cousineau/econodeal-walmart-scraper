@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 
 const liquidationUrl = "https://www.rona.ca/fr/promotions/liquidation";
+const PRODUCT_CARD_SELECTOR = "div.product-thumbnail__header";
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -77,12 +78,12 @@ async function main() {
   await humanMove(page);
   await page.goto(liquidationUrl, { waitUntil: "domcontentloaded" });
 
-  await page.waitForSelector("div.product-tile", { state: "attached", timeout: 30000 });
+  await page.waitForSelector(PRODUCT_CARD_SELECTOR, { state: "attached", timeout: 60000 });
   await gradualScroll(page);
 
-  await page.waitForSelector("div.product-tile a", { state: "visible", timeout: 30000 });
+  await page.waitForSelector(`${PRODUCT_CARD_SELECTOR} a`, { state: "visible", timeout: 30000 });
 
-  const cardsLocator = page.locator("div.product-tile");
+  const cardsLocator = page.locator(PRODUCT_CARD_SELECTOR);
 
   await cardsLocator
     .first()
