@@ -101,6 +101,21 @@ function parsePrice(raw) {
   return Number.isNaN(num) ? null : num;
 }
 
+function computeDiscountPercent(currentPrice, originalPrice) {
+  if (
+    typeof currentPrice !== "number" ||
+    typeof originalPrice !== "number" ||
+    !isFinite(currentPrice) ||
+    !isFinite(originalPrice) ||
+    originalPrice <= 0
+  ) {
+    return null;
+  }
+
+  const raw = ((originalPrice - currentPrice) / originalPrice) * 100;
+  return Math.round(raw);
+}
+
 async function extractAttribute(locator, selectorList, attribute) {
   for (const selector of selectorList) {
     const value = await locator.locator(selector).first().getAttribute(attribute).catch(() => null);
@@ -110,42 +125,44 @@ async function extractAttribute(locator, selectorList, attribute) {
 }
 
 async function extractProduct(card) {
-  const title = await extractText(card, "a.product-thumbnail__title.product-link");
+  const title = await card
+    .$eval("a.product-thumbnail__title.product-link", (el) => el.textContent.trim())
+    .catch(() => null);
 
-  let productUrl = "";
-  try {
-    const href = await card.$eval(
-      "a.product-thumbnail__title.product-link",
-      (el) => el.getAttribute("href"),
-    );
-    if (href) {
-      productUrl = new URL(href, "https://www.bureauengros.com").toString();
-    }
-  } catch {}
+  const productUrl = await card
+    .$eval("a.product-thumbnail__title.product-link", (el) => el.href)
+    .catch(() => null);
 
-  const currentPriceText = await extractText(card, "span.money.pre-money");
-
-  const originalPriceText = await extractText(
-    card,
-    "div.product-thumbnail__price div.top-product.fr strike",
-  );
-
-  const currentPrice = parsePrice(currentPriceText);
-  const originalPrice = parsePrice(originalPriceText);
-
-  const imgSrc = await card
+  const imageUrl = await card
     .$eval("img.product-thumbnail__image", (el) => el.src)
     .catch(() => null);
-  const imageUrl = imgSrc ? buildAbsoluteUrl(imgSrc) : "";
 
-  const cardText = (await card.innerText().catch(() => "")) || "";
-  const badge = /liquidation|clearance/i.test(cardText);
+  const currentPrice = await card
+    .$eval("span.money.pre-money, .price__current, .price--highlight", (el) =>
+      parseFloat(el.textContent.replace(/[^\d.,]/g, "").replace(",", ".")),
+    )
+    .catch(() => null);
+
+  const originalPrice = await card
+    .$eval("div.product-thumbnail__price div.top-product.fr strike, .price__regular, .price--compare", (el) =>
+      parseFloat(el.textContent.replace(/[^\d.,]/g, "").replace(",", ".")),
+    )
+    .catch(() => null);
+
+  const badge = !!(await card.$(".product-tag, .badge, .tag--clearance"));
+
+  if (!title || !productUrl) {
+    return null;
+  }
+
+  const discountPercent = computeDiscountPercent(currentPrice, originalPrice);
 
   return {
     title,
     productUrl,
     currentPrice,
     originalPrice,
+    discountPercent,
     imageUrl,
     badge,
   };
@@ -169,10 +186,10 @@ async function main() {
   page.setDefaultTimeout(60000);
 
   const PRODUCT_CARD_SELECTOR = "div.product-thumbnail";
-  const maxPages = 10; // safety limit
   const allProducts = [];
 
-  for (let pageIndex = 1; pageIndex <= maxPages; pageIndex++) {
+  let pageIndex = 1;
+  while (true) {
     const url = `${BASE_URL}&page=${pageIndex}`;
     console.log(`Navigating to page ${pageIndex}: ${url}`);
 
@@ -197,9 +214,12 @@ async function main() {
 
     for (const card of cards) {
       const product = await extractProduct(card);
+      if (!product) continue;
       allProducts.push(product);
       await page.waitForTimeout(humanDelay(100, 300));
     }
+
+    pageIndex++;
   }
 
   const result = {
