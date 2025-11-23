@@ -68,27 +68,6 @@ function buildAbsoluteUrl(href) {
   return `https://www.bureauengros.com${href.startsWith("/") ? href : `/${href}`}`;
 }
 
-async function findCardLocator(page) {
-  const selectors = [
-    "[data-testid=product-card]",
-    "[data-testid=product-tile]",
-    "[data-testid=product-tile-link]",
-    "div.ais-InfiniteHits-item",
-    "div[data-item-type=product]",
-    "article",
-  ];
-
-  for (const selector of selectors) {
-    const locator = page.locator(selector);
-    const count = await locator.count();
-    if (count > 0) {
-      return locator;
-    }
-  }
-
-  return page.locator("article");
-}
-
 async function extractText(locator, selectorList) {
   for (const selector of selectorList) {
     const text = await locator.locator(selector).first().innerText().catch(() => "");
@@ -120,37 +99,35 @@ async function main() {
 
   await page.waitForTimeout(humanDelay(400, 900));
   await humanMove(page);
-  await page.goto(clearanceUrl, { waitUntil: "domcontentloaded" });
+  await page.goto(clearanceUrl, { waitUntil: "networkidle" });
+  page.setDefaultTimeout(60000);
 
   await page.waitForSelector("body", { state: "attached", timeout: 45000 });
   await gradualScroll(page);
 
   await page.waitForSelector("img", { state: "attached", timeout: 45000 }).catch(() => null);
 
-  const cardsLocator = await findCardLocator(page);
-  await cardsLocator
-    .first()
-    .waitFor({ state: "visible", timeout: 45000 })
-    .catch(() => null);
+  const PRODUCT_CARD_SELECTOR = "div.product-thumbnail__header";
+  await page.waitForSelector(PRODUCT_CARD_SELECTOR, { timeout: 60000 });
+  const cards = await page.$$(PRODUCT_CARD_SELECTOR);
+  console.log(`DEBUG: Found ${cards.length} product cards`);
+
+  if (cards.length === 0) {
+    const html = await page.content();
+    fs.writeFileSync("bureauengros_debug.html", html);
+    console.error("No product cards found, wrote bureauengros_debug.html");
+  }
 
   const products = [];
-  const count = await cardsLocator.count();
 
-  for (let i = 0; i < count; i++) {
-    const card = cardsLocator.nth(i);
+  for (const card of cards) {
+    const title = await card
+      .$eval("a.product-link", (el) => el.innerText.trim())
+      .catch(() => "");
 
-    const title =
-      (await extractText(card, [
-        "[data-testid=product-title]",
-        "[data-testid=hit-name]",
-        ".hit-name",
-        ".product-title",
-        "h2",
-        "h3",
-      ])) || "";
-
-    const href =
-      (await extractAttribute(card, ["[data-testid=product-tile-link]", "a"], "href")) || "";
+    const href = await card
+      .$eval("a.product-link", (el) => el.getAttribute("href") || "")
+      .catch(() => "");
     const productUrl = buildAbsoluteUrl(href);
 
     const currentPrice =
@@ -172,8 +149,9 @@ async function main() {
       ])) || null;
     const originalPrice = originalPriceRaw ? originalPriceRaw.trim() : null;
 
-    const imgSrc =
-      (await extractAttribute(card, ["img", "[data-testid=product-image]"], "src")) || null;
+    const imgSrc = await card
+      .$eval("img.product-thumbnail__image", (el) => el.src)
+      .catch(() => null);
     const imageUrl = imgSrc ? buildAbsoluteUrl(imgSrc) : "";
 
     const cardText = (await card.innerText().catch(() => "")) || "";
