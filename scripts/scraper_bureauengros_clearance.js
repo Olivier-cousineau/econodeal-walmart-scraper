@@ -1,5 +1,4 @@
 import { chromium } from "playwright";
-import minimist from "minimist";
 import fs from "fs";
 import path from "path";
 
@@ -10,8 +9,20 @@ const BASE_URL =
   "&refinementList%5Bnamed_tags.clearance_sku%5D%5B0%5D=1" +
   "&sortBy=shopify_products";
 
-const args = minimist(process.argv.slice(2));
-const maxPages = parseInt(args.maxPages || "100", 10);
+const DEFAULT_MAX_PAGES = 100;
+
+function getMaxPages() {
+  const arg = process.argv.find((a) => a.startsWith("--maxPages="));
+  if (!arg) return DEFAULT_MAX_PAGES;
+
+  const value = parseInt(arg.split("=")[1], 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    return DEFAULT_MAX_PAGES;
+  }
+  return value;
+}
+
+const maxPages = getMaxPages();
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -194,9 +205,9 @@ async function main() {
 
   let lastFirstProductKey = null;
 
-  for (let pageIndex = 1; pageIndex <= maxPages; pageIndex++) {
-    const url = `${BASE_URL}&page=${pageIndex}`;
-    console.log(`Navigating to page ${pageIndex}: ${url}`);
+  for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+    const url = `${BASE_URL}&page=${pageNum}`;
+    console.log(`Navigating to page ${pageNum}: ${url}`);
 
     await page.goto(url, {
       waitUntil: "networkidle",
@@ -210,7 +221,7 @@ async function main() {
 
     await page.waitForSelector(PRODUCT_CARD_SELECTOR, { timeout: 60000 }).catch(() => null);
     const cards = await page.$$(PRODUCT_CARD_SELECTOR);
-    console.log(`Page ${pageIndex}: found ${cards.length} product cards`);
+    console.log(`Page ${pageNum}: found ${cards.length} product cards`);
 
     if (!cards.length) {
       console.log("No more products, stopping pagination.");
@@ -219,7 +230,7 @@ async function main() {
 
     const firstKey = await cards[0].innerText();
     if (lastFirstProductKey && firstKey === lastFirstProductKey) {
-      console.log(`Same content as previous page detected at page ${pageIndex}, stopping.`);
+      console.log(`Same content as previous page detected at page ${pageNum}, stopping.`);
       break;
     }
     lastFirstProductKey = firstKey;
