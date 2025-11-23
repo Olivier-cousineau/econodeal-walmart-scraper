@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import minimist from "minimist";
 import fs from "fs";
 import path from "path";
 
@@ -8,6 +9,9 @@ const BASE_URL =
   "&configure%5BruleContexts%5D%5B0%5D=logged-out" +
   "&refinementList%5Bnamed_tags.clearance_sku%5D%5B0%5D=1" +
   "&sortBy=shopify_products";
+
+const args = minimist(process.argv.slice(2));
+const maxPages = parseInt(args.maxPages || "100", 10);
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -188,8 +192,9 @@ async function main() {
   const PRODUCT_CARD_SELECTOR = "div.product-thumbnail";
   const allProducts = [];
 
-  let pageIndex = 1;
-  while (true) {
+  let lastFirstProductKey = null;
+
+  for (let pageIndex = 1; pageIndex <= maxPages; pageIndex++) {
     const url = `${BASE_URL}&page=${pageIndex}`;
     console.log(`Navigating to page ${pageIndex}: ${url}`);
 
@@ -212,14 +217,19 @@ async function main() {
       break;
     }
 
+    const firstKey = await cards[0].innerText();
+    if (lastFirstProductKey && firstKey === lastFirstProductKey) {
+      console.log(`Same content as previous page detected at page ${pageIndex}, stopping.`);
+      break;
+    }
+    lastFirstProductKey = firstKey;
+
     for (const card of cards) {
       const product = await extractProduct(card);
       if (!product) continue;
       allProducts.push(product);
       await page.waitForTimeout(humanDelay(100, 300));
     }
-
-    pageIndex++;
   }
 
   const result = {
