@@ -68,12 +68,23 @@ function buildAbsoluteUrl(href) {
   return `https://www.bureauengros.com${href.startsWith("/") ? href : `/${href}`}`;
 }
 
-async function extractText(locator, selectorList) {
-  for (const selector of selectorList) {
-    const text = await locator.locator(selector).first().innerText().catch(() => "");
-    if (text && text.trim()) return text.trim();
+async function extractText(root, selectorList) {
+  try {
+    if (!root) return null;
+    const selectors = Array.isArray(selectorList) ? selectorList : [selectorList];
+
+    for (const selector of selectors) {
+      const el = await root.$(selector);
+      if (!el) continue;
+      const text = await el.innerText();
+      if (text && text.trim()) return text.trim();
+    }
+
+    return "";
+  } catch (err) {
+    console.error(`Failed to extract text for selector "${selectorList}":`, err);
+    return null;
   }
-  return "";
 }
 
 async function extractAttribute(locator, selectorList, attribute) {
