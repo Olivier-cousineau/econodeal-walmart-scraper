@@ -5,6 +5,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "scrape:bureauengros:clearance": "node scripts/scraper_bureauengros_clearance.js",
     "scrape:rona:saint-jerome": "node scripts/scraper_rona_saintjerome.js",
     "scrape:headless": "HEADLESS=true node scripts/scraper_rona_saintjerome.js",
     "scrape:headful": "HEADLESS=false xvfb-run -a node scripts/scraper_rona_saintjerome.js"
