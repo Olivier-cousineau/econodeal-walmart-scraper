@@ -132,7 +132,7 @@ async function main() {
 
   await page.waitForSelector("img", { state: "attached", timeout: 45000 }).catch(() => null);
 
-  const PRODUCT_CARD_SELECTOR = "div.product-thumbnail__header";
+  const PRODUCT_CARD_SELECTOR = "div.product-thumbnail";
   await page.waitForSelector(PRODUCT_CARD_SELECTOR, { timeout: 60000 });
   const cards = await page.$$(PRODUCT_CARD_SELECTOR);
   console.log(`DEBUG: found ${cards.length} product cards`);
