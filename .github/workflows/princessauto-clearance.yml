@@ -1,0 +1,34 @@
+name: Scrape Princess Auto Clearance
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Princess Auto clearance scraper
+        env:
+          HEADLESS: true
+        run: npm run scrape:princessauto:clearance
+
+      - name: Upload scraper output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: princessauto-clearance-output
+          path: outputs/princessauto/clearance/
