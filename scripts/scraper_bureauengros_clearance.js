@@ -9,6 +9,12 @@ const BASE_URL =
   "&refinementList%5Bnamed_tags.clearance_sku%5D%5B0%5D=1" +
   "&sortBy=shopify_products";
 
+const STORE_PAGE_URL =
+  process.env.BUREAUENGROS_STORE_URL ||
+  "https://www.bureauengros.com/stores/qc/saint-jerome/19/";
+
+const STORE_NAME = process.env.BUREAUENGROS_STORE_NAME || "Saint-Jérôme";
+
 const DEFAULT_MAX_PAGES = 100;
 
 function getMaxPages() {
@@ -198,6 +204,13 @@ async function main() {
   });
   const page = await context.newPage();
 
+  if (STORE_PAGE_URL) {
+    console.log(`Setting preferred store to ${STORE_NAME} via ${STORE_PAGE_URL}`);
+    await page.goto(STORE_PAGE_URL, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => null);
+    await page.waitForTimeout(humanDelay(500, 1200));
+    await humanMove(page);
+  }
+
   await page.waitForTimeout(humanDelay(400, 900));
   await humanMove(page);
   page.setDefaultTimeout(60000);
@@ -248,14 +261,14 @@ async function main() {
   }
 
   const result = {
-    store: "Bureau en Gros - Centre de liquidation",
+    store: `Bureau en Gros (${STORE_NAME}) - Centre de liquidation`,
     url: BASE_URL,
     scrapedAt: new Date().toISOString(),
     count: allProducts.length,
     products: allProducts,
   };
 
-  const outDir = path.join("outputs", "bureauengros", "clearance");
+  const outDir = path.join("outputs", "bureauengros", "saint-jerome");
   fs.mkdirSync(outDir, { recursive: true });
   const outFile = path.join(outDir, "data.json");
   fs.writeFileSync(outFile, JSON.stringify(result, null, 2), "utf-8");

@@ -8,9 +8,10 @@ This repository has been cleaned to remove Walmart scraping logic, workflows, an
 
 ## Usage
 
-- **Bureau en Gros (Staples Canada) – liquidation**
+- **Bureau en Gros (Staples Canada – Saint-Jérôme) – liquidation**
   - Manual run: `npm run scrape:bureauengros:clearance`
-  - Output: `outputs/bureauengros/clearance/data.json`
+  - Output: `outputs/bureauengros/saint-jerome/data.json`
+  - Optional: set `BUREAUENGROS_STORE_URL` and `BUREAUENGROS_STORE_NAME` env vars to point the scraper to a different store page.
 
 ## Automation
 
