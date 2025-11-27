@@ -1,3 +1,4 @@
+// scripts/scrape_bureauengros_single_source.js
 import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
@@ -9,13 +10,17 @@ const BASE_URL =
   "&refinementList%5Bnamed_tags.clearance_sku%5D%5B0%5D=1" +
   "&sortBy=shopify_products";
 
+// ⚠️ On garde Saint-Jérôme comme magasin source
 const STORE_PAGE_URL =
   process.env.BUREAUENGROS_STORE_URL ||
   "https://www.bureauengros.com/stores/qc/saint-jerome/19/";
-
 const STORE_NAME = process.env.BUREAUENGROS_STORE_NAME || "Saint-Jérôme";
 
 const DEFAULT_MAX_PAGES = 100;
+
+// 🔹 Chargement des succursales Bureau en Gros (même format que dans ton front)
+const BRANCHES_PATH = path.join("data", "bureauengros", "branches.json");
+const branches = JSON.parse(fs.readFileSync(BRANCHES_PATH, "utf-8"));
 
 function getMaxPages() {
   const arg = process.argv.find((a) => a.startsWith("--maxPages="));
@@ -86,37 +91,10 @@ function buildProxySettings() {
   };
 }
 
-function buildAbsoluteUrl(href) {
-  if (!href) return "";
-  if (/^https?:\/\//i.test(href)) return href;
-
-  return `https://www.bureauengros.com${href.startsWith("/") ? href : `/${href}`}`;
-}
-
-async function extractText(root, selectorList) {
-  try {
-    if (!root) return null;
-    const selectors = Array.isArray(selectorList) ? selectorList : [selectorList];
-
-    for (const selector of selectors) {
-      const el = await root.$(selector);
-      if (!el) continue;
-      const text = await el.innerText();
-      if (text && text.trim()) return text.trim();
-    }
-
-    return null;
-  } catch (err) {
-    console.error(`Failed to extract text for selector "${selectorList}":`, err);
-    return null;
-  }
-}
-
 function parsePrice(raw) {
   if (!raw) return null;
   const clean = raw
-    .replace(/\s/g, "")
-    .replace("$", "")
+    .replace(/[^\d.,]/g, "")
     .replace(",", ".");
   const num = parseFloat(clean);
   return Number.isNaN(num) ? null : num;
@@ -137,14 +115,6 @@ function computeDiscountPercent(currentPrice, originalPrice) {
   return Math.round(raw);
 }
 
-async function extractAttribute(locator, selectorList, attribute) {
-  for (const selector of selectorList) {
-    const value = await locator.locator(selector).first().getAttribute(attribute).catch(() => null);
-    if (value) return value;
-  }
-  return null;
-}
-
 async function extractProduct(card) {
   const title = await card
     .$eval("a.product-thumbnail__title.product-link", (el) => el.textContent.trim())
@@ -158,17 +128,21 @@ async function extractProduct(card) {
     .$eval("img.product-thumbnail__image", (el) => el.src)
     .catch(() => null);
 
-  const currentPrice = await card
-    .$eval("span.money.pre-money, .price__current, .price--highlight", (el) =>
-      parseFloat(el.textContent.replace(/[^\d.,]/g, "").replace(",", ".")),
+  const currentPriceRaw = await card
+    .$eval(
+      "span.money.pre-money, .price__current, .price--highlight",
+      (el) => el.textContent,
     )
     .catch(() => null);
+  const currentPrice = parsePrice(currentPriceRaw);
 
-  const originalPrice = await card
-    .$eval("div.product-thumbnail__price div.top-product.fr strike, .price__regular, .price--compare", (el) =>
-      parseFloat(el.textContent.replace(/[^\d.,]/g, "").replace(",", ".")),
+  const originalPriceRaw = await card
+    .$eval(
+      "div.product-thumbnail__price div.top-product.fr strike, .price__regular, .price--compare",
+      (el) => el.textContent,
     )
     .catch(() => null);
+  const originalPrice = parsePrice(originalPriceRaw);
 
   const badge = !!(await card.$(".product-tag, .badge, .tag--clearance"));
 
@@ -189,12 +163,52 @@ async function extractProduct(card) {
   };
 }
 
-async function main() {
+// 🔹 Slugification identique à ton front (id + nom)
+function slugify(value) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function branchToStore(branch) {
+  const slug = `${branch.id}-${slugify(branch.name)}`;
+  return {
+    id: branch.id,
+    slug,
+    name: branch.name,
+    address: branch.address ?? "",
+  };
+}
+
+const BUREAU_EN_GROS_STORES = branches.map(branchToStore);
+
+function writeStoreDeals(store, products, sourceStoreName) {
+  const outDir = path.join("outputs", "bureauengros", store.slug);
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const outFile = path.join(outDir, "data.json");
+  const payload = {
+    storeId: store.id,
+    storeName: store.name,
+    sourceStore: sourceStoreName,
+    url: BASE_URL,
+    scrapedAt: new Date().toISOString(),
+    count: products.length,
+    products,
+  };
+
+  fs.writeFileSync(outFile, JSON.stringify(payload, null, 2), "utf-8");
+}
+
+// 🔹 Scrape Saint-Jérôme UNE FOIS
+async function scrapeSaintJeromeDeals() {
   const proxy = buildProxySettings();
   const isHeadful = process.env.HEADLESS === "false";
   console.log("Playwright mode:", isHeadful ? "headful" : "headless");
-
-  console.log("Starting Bureau en Gros clearance scraping...");
+  console.log("Starting Bureau en Gros clearance scraping from Saint-Jérôme...");
 
   const browser = await chromium.launch({ headless: isHeadful ? false : true, proxy });
 
@@ -206,7 +220,9 @@ async function main() {
 
   if (STORE_PAGE_URL) {
     console.log(`Setting preferred store to ${STORE_NAME} via ${STORE_PAGE_URL}`);
-    await page.goto(STORE_PAGE_URL, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => null);
+    await page
+      .goto(STORE_PAGE_URL, { waitUntil: "domcontentloaded", timeout: 60000 })
+      .catch(() => null);
     await page.waitForTimeout(humanDelay(500, 1200));
     await humanMove(page);
   }
@@ -218,7 +234,6 @@ async function main() {
   const PRODUCT_CARD_SELECTOR = "div.product-thumbnail";
   const allProducts = [];
   let pagesScraped = 0;
-
   let lastFirstProductKey = null;
 
   for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
@@ -255,35 +270,39 @@ async function main() {
     for (const card of cards) {
       const product = await extractProduct(card);
       if (!product) continue;
+      if (!product.badge) continue; // 🔹 On garde seulement les produits vraiment en liquidation
       allProducts.push(product);
       await page.waitForTimeout(humanDelay(100, 300));
     }
   }
 
-  const result = {
-    store: `Bureau en Gros (${STORE_NAME}) - Centre de liquidation`,
-    url: BASE_URL,
-    scrapedAt: new Date().toISOString(),
-    count: allProducts.length,
-    products: allProducts,
-  };
-
-  const outDir = path.join("outputs", "bureauengros", "saint-jerome");
-  fs.mkdirSync(outDir, { recursive: true });
-  const outFile = path.join(outDir, "data.json");
-  fs.writeFileSync(outFile, JSON.stringify(result, null, 2), "utf-8");
+  await browser.close();
 
   console.log(
-    `✅ Bureau en Gros – scraped ${allProducts.length} products across ${pagesScraped} page(s).`,
+    `✅ Bureau en Gros – scraped ${allProducts.length} clearance products across ${pagesScraped} page(s) from Saint-Jérôme.`,
   );
-  console.log("Finished Bureau en Gros clearance scraping.");
 
-  await browser.close();
+  return allProducts;
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
+async function main() {
+  try {
+    const products = await scrapeSaintJeromeDeals();
+
+    console.log(
+      `Replicating ${products.length} clearance products to all ${BUREAU_EN_GROS_STORES.length} Bureau en Gros stores...`,
+    );
+
+    for (const store of BUREAU_EN_GROS_STORES) {
+      writeStoreDeals(store, products, STORE_NAME);
+    }
+
+    console.log("✅ Finished generating Bureau en Gros deals for all stores from Saint-Jérôme source.");
+    process.exit(0);
+  } catch (err) {
     console.error("Failed to scrape Bureau en Gros clearance:", err);
     process.exit(1);
-  });
+  }
+}
+
+main();
