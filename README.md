@@ -4,14 +4,16 @@ This repository has been cleaned to remove Walmart scraping logic, workflows, an
 
 ## Contents
 - `package.json`: Minimal package manifest retained for potential future development.
-- `scripts/`: Playwright scrapers for retailer liquidation sections.
+- `scripts/`: Playwright scrapers for retailer liquidation sections and orchestrators.
+- `data/`: Static datasets used by the scrapers.
+- `src/`: Shared scraping helpers.
 
 ## Usage
 
-- **Bureau en Gros (Staples Canada – Saint-Jérôme) – liquidation**
-  - Manual run: `npm run scrape:bureauengros:clearance`
-  - Output: `outputs/bureauengros/saint-jerome/data.json`
-  - Optional: set `BUREAUENGROS_STORE_URL` and `BUREAUENGROS_STORE_NAME` env vars to point the scraper to a different store page.
+- **Bureau en Gros (Staples Canada) – single-source clearance replicated to all stores**
+  - Manual run: `npm run scrape:bureauengros`
+  - Output: `outputs/bureauengros/<storeSlug>/data.json` for every store listed in `data/bureauengros/branches.json`
+  - Optional: set `BUREAUENGROS_STORE_URL` to override the Saint-Jérôme store page when selecting inventory context.
 
 ## Automation
 
