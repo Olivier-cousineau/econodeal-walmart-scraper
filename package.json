@@ -5,6 +5,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "scrape:bureauengros": "node scripts/run_bureauengros_single_source.js",
     "scrape:bureauengros:clearance": "node scripts/scraper_bureauengros_clearance.js",
     "scrape:rona:saint-jerome": "node scripts/scraper_rona_saintjerome.js",
     "scrape:princessauto:clearance": "node scripts/scraper_princessauto_clearance.js",

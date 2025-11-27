@@ -1,0 +1,52 @@
+[
+  {
+    "id": "124",
+    "name": "Bureau en Gros – Saint-Jérôme, QC",
+    "address": "1135 Boulevard Jean-Baptiste-Rolland Ouest, Saint-Jérôme, QC, J7Y 4V5"
+  },
+  {
+    "id": "308",
+    "name": "Bureau en Gros – Boisbriand, QC",
+    "address": "3525 Avenue Claude-Léveillée, Boisbriand, QC, J7H 0A5"
+  },
+  {
+    "id": "122",
+    "name": "Bureau en Gros – Rosemère, QC",
+    "address": "401 Boulevard Labelle, Rosemère, QC, J7A 3T2"
+  },
+  {
+    "id": "215",
+    "name": "Bureau en Gros – Laval (Marc-Aurèle-Fortin), QC",
+    "address": "1695 Boulevard Saint-Martin Ouest, Laval, QC, H7S 1N2"
+  },
+  {
+    "id": "221",
+    "name": "Bureau en Gros – Laval (Curé-Labelle), QC",
+    "address": "4315 Boulevard Curé-Labelle, Laval, QC, H7R 5R8"
+  },
+  {
+    "id": "219",
+    "name": "Bureau en Gros – Laval (Mega Centre Notre-Dame), QC",
+    "address": "5200 Boulevard des Laurentides, Laval, QC, H7K 2J8"
+  },
+  {
+    "id": "168",
+    "name": "Bureau en Gros – Mascouche, QC",
+    "address": "250 Montée Masson, Mascouche, QC, J7K 3B5"
+  },
+  {
+    "id": "241",
+    "name": "Bureau en Gros – Terrebonne, QC",
+    "address": "1005 Boulevard Moody, Terrebonne, QC, J6W 3K9"
+  },
+  {
+    "id": "165",
+    "name": "Bureau en Gros – Saint-Eustache, QC",
+    "address": "555 Boulevard Arthur-Sauvé, Saint-Eustache, QC, J7P 4X7"
+  },
+  {
+    "id": "170",
+    "name": "Bureau en Gros – Blainville, QC",
+    "address": "1375 Boulevard Michèle-Bohec, Blainville, QC, J7C 0M4"
+  }
+]
