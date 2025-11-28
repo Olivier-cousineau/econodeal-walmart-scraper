@@ -216,6 +216,7 @@ async function scrapeSaintJeromeDeals() {
     viewport: { width: randomInt(1280, 1440), height: randomInt(720, 900) },
   });
   const page = await context.newPage();
+  page.setDefaultTimeout(90000);
 
   if (STORE_PAGE_URL) {
     console.log(`Setting preferred store to ${STORE_NAME} via ${STORE_PAGE_URL}`);
@@ -228,7 +229,7 @@ async function scrapeSaintJeromeDeals() {
 
   await page.waitForTimeout(humanDelay(400, 900));
   await humanMove(page);
-  page.setDefaultTimeout(60000);
+  page.setDefaultTimeout(90000);
 
   const PRODUCT_CARD_SELECTOR = "div.product-thumbnail";
   const allProducts = [];
@@ -240,8 +241,9 @@ async function scrapeSaintJeromeDeals() {
     console.log(`Navigating to page ${pageNum}: ${url}`);
 
     await page.goto(url, {
-      waitUntil: "networkidle",
-      timeout: 60000,
+      // "networkidle" is too strict for Bureau en Gros, it often never becomes idle
+      waitUntil: "domcontentloaded",
+      timeout: 90000,
     });
 
     await page.waitForSelector("body", { state: "attached", timeout: 45000 });
