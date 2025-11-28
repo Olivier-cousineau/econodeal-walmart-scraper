@@ -1,0 +1,57 @@
+name: Scrape Bureau en Gros and push JSON to main repo
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  scrape-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout scraper repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Bureau en Gros scraper
+        run: |
+          npm run scrape:bureauengros
+
+      - name: Clone main EconoDeal repo
+        run: |
+          git clone https://github.com/Olivier-cousineau/Econo-econo111.git main-repo
+        env:
+          GIT_ASKPASS: /bin/echo
+
+      - name: Copy Bureau en Gros JSON into main repo
+        run: |
+          mkdir -p main-repo/outputs/bureauengros
+          rsync -av --delete outputs/bureauengros/ main-repo/outputs/bureauengros/
+
+      - name: Commit and push changes to main repo
+        working-directory: main-repo
+        env:
+          MAIN_REPO_PAT: ${{ secrets.MAIN_REPO_PAT }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add outputs/bureauengros || true
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Update Bureau en Gros clearance JSON from scraper" || exit 0
+
+          git remote set-url origin https://$MAIN_REPO_PAT@github.com/Olivier-cousineau/Econo-econo111.git
+          git push origin main
