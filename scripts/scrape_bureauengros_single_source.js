@@ -208,81 +208,90 @@ async function scrapeSaintJeromeDeals() {
 
   const browser = await chromium.launch({ headless: isHeadful ? false : true, proxy });
 
-  const context = await browser.newContext({
-    userAgent: chooseUserAgent(),
-    viewport: { width: randomInt(1280, 1440), height: randomInt(720, 900) },
-  });
-  const page = await context.newPage();
-  page.setDefaultTimeout(90000);
-
-  if (STORE_PAGE_URL) {
-    console.log(`Setting preferred store to ${STORE_NAME} via ${STORE_PAGE_URL}`);
-    await page
-      .goto(STORE_PAGE_URL, { waitUntil: "domcontentloaded", timeout: 60000 })
-      .catch(() => null);
-    await page.waitForTimeout(humanDelay(500, 1200));
-    await humanMove(page);
-  }
-
-  await page.waitForTimeout(humanDelay(400, 900));
-  await humanMove(page);
-  page.setDefaultTimeout(90000);
-
-  const PRODUCT_CARD_SELECTOR = "div.product-thumbnail";
-  const allProducts = [];
-  let pagesScraped = 0;
-  let lastFirstProductKey = null;
-
-  for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-    const url = `${BASE_URL}&page=${pageNum}`;
-    console.log(`Navigating to page ${pageNum}: ${url}`);
-
-    await page.goto(url, {
-      // "networkidle" is too strict for Bureau en Gros, it often never becomes idle
-      waitUntil: "domcontentloaded",
-      timeout: 90000,
+  try {
+    const context = await browser.newContext({
+      userAgent: chooseUserAgent(),
+      viewport: { width: randomInt(1280, 1440), height: randomInt(720, 900) },
     });
+    const page = await context.newPage();
+    page.setDefaultTimeout(90000);
 
-    await page.waitForSelector("body", { state: "attached", timeout: 45000 });
-    await gradualScroll(page);
-
-    await page.waitForSelector("img", { state: "attached", timeout: 45000 }).catch(() => null);
-
-    await page.waitForSelector(PRODUCT_CARD_SELECTOR, { timeout: 60000 }).catch(() => null);
-    const cards = await page.$$(PRODUCT_CARD_SELECTOR);
-    console.log(`Page ${pageNum}: found ${cards.length} product cards`);
-
-    if (!cards.length) {
-      console.log("No more products, stopping pagination.");
-      break;
+    if (STORE_PAGE_URL) {
+      console.log(`Setting preferred store to ${STORE_NAME} via ${STORE_PAGE_URL}`);
+      await page
+        .goto(STORE_PAGE_URL, { waitUntil: "domcontentloaded", timeout: 60000 })
+        .catch(() => null);
+      await page.waitForTimeout(humanDelay(500, 1200));
+      await humanMove(page);
     }
 
-    const firstKey = await cards[0].innerText();
-    if (lastFirstProductKey && firstKey === lastFirstProductKey) {
-      console.log(`Same content as previous page detected at page ${pageNum}, stopping.`);
-      break;
+    await page.waitForTimeout(humanDelay(400, 900));
+    await humanMove(page);
+    page.setDefaultTimeout(90000);
+
+    const PRODUCT_CARD_SELECTOR = "div.product-thumbnail";
+    const allProducts = [];
+    let pagesScraped = 0;
+    let lastFirstProductKey = null;
+
+    for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+      const url = `${BASE_URL}&page=${pageNum}`;
+      console.log(`Navigating to page ${pageNum}: ${url}`);
+
+      try {
+        await page.goto(url, {
+          // "networkidle" is trop strict, on utilise "domcontentloaded"
+          waitUntil: "domcontentloaded",
+          timeout: 90000,
+        });
+      } catch (err) {
+        console.error(
+          `❌ Failed to load page ${pageNum} (${url}): ${err.message}. Stopping pagination but keeping ${allProducts.length} products scraped so far.`,
+        );
+        break; // on arrête mais on garde les produits déjà trouvés
+      }
+
+      await page.waitForSelector("body", { state: "attached", timeout: 45000 });
+      await gradualScroll(page);
+
+      await page.waitForSelector("img", { state: "attached", timeout: 45000 }).catch(() => null);
+
+      await page.waitForSelector(PRODUCT_CARD_SELECTOR, { timeout: 60000 }).catch(() => null);
+      const cards = await page.$$(PRODUCT_CARD_SELECTOR);
+      console.log(`Page ${pageNum}: found ${cards.length} product cards`);
+
+      if (!cards.length) {
+        console.log("No more products, stopping pagination.");
+        break;
+      }
+
+      const firstKey = await cards[0].innerText().catch(() => "");
+      if (lastFirstProductKey && firstKey && firstKey === lastFirstProductKey) {
+        console.log(`Same content as previous page detected at page ${pageNum}, stopping.`);
+        break;
+      }
+      lastFirstProductKey = firstKey;
+      pagesScraped = pageNum;
+
+      for (const card of cards) {
+        const product = await extractProduct(card);
+        if (!product) continue;
+
+        // La page est déjà filtrée sur les liquidations, on garde tout ce qui est valide
+        allProducts.push(product);
+
+        await page.waitForTimeout(humanDelay(100, 300));
+      }
     }
-    lastFirstProductKey = firstKey;
-    pagesScraped = pageNum;
 
-    for (const card of cards) {
-      const product = await extractProduct(card);
-      if (!product) continue;
+    console.log(
+      `✅ Bureau en Gros – scraped ${allProducts.length} clearance products across ${pagesScraped} page(s) from Saint-Jérôme.`,
+    );
 
-      // On garde tous les produits valides (la page est déjà filtrée sur les liquidations)
-      allProducts.push(product);
-
-      await page.waitForTimeout(humanDelay(100, 300));
-    }
+    return allProducts;
+  } finally {
+    await browser.close();
   }
-
-  await browser.close();
-
-  console.log(
-    `✅ Bureau en Gros – scraped ${allProducts.length} clearance products across ${pagesScraped} page(s) from Saint-Jérôme.`,
-  );
-
-  return allProducts;
 }
 
 async function main() {
