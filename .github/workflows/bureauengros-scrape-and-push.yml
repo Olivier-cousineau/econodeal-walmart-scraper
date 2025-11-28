@@ -36,8 +36,8 @@ jobs:
 
       - name: Copy Bureau en Gros JSON into main repo
         run: |
-          mkdir -p main-repo/outputs/bureauengros
-          rsync -av --delete outputs/bureauengros/ main-repo/outputs/bureauengros/
+          mkdir -p main-repo/public/bureauengros
+          rsync -av --delete outputs/bureauengros/ main-repo/public/bureauengros/
 
       - name: Commit and push changes to main repo
         working-directory: main-repo
