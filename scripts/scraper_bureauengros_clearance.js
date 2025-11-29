@@ -270,8 +270,11 @@ async function scrapeSaintJeromeDeals() {
     for (const card of cards) {
       const product = await extractProduct(card);
       if (!product) continue;
-      if (!product.badge) continue; // 🔹 On garde seulement les produits vraiment en liquidation
+
+      // ✅ IMPORTANT : on NE filtre PLUS sur product.badge
+      // Tous les produits ici viennent déjà du centre de liquidation.
       allProducts.push(product);
+
       await page.waitForTimeout(humanDelay(100, 300));
     }
   }
